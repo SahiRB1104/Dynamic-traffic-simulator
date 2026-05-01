@@ -56,13 +56,14 @@ public class RouteController {
     }
 
     private GraphService.PathResult runAlgorithm(RouteRequest request) {
-        String source = request.source();
-        String destination = request.destination();
+        Node source = graphService.resolveEndpoint(request.source(), request.sourceLatitude(), request.sourceLongitude());
+        Node destination = graphService.resolveEndpoint(
+            request.destination(), request.destinationLatitude(), request.destinationLongitude());
         String algorithm = request.algorithm() == null ? "DIJKSTRA" : request.algorithm().trim().toUpperCase(Locale.ROOT);
 
         return switch (algorithm) {
-            case "ASTAR", "A*" -> graphService.aStar(source, destination);
-            case "DIJKSTRA" -> graphService.dijkstra(source, destination);
+            case "ASTAR", "A*" -> graphService.aStar(source.getId(), destination.getId());
+            case "DIJKSTRA" -> graphService.dijkstra(source.getId(), destination.getId());
             default -> throw new IllegalArgumentException("Unsupported algorithm: " + request.algorithm());
         };
     }
