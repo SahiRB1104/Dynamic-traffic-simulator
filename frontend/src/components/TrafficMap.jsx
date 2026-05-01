@@ -1,5 +1,5 @@
 import React, { useMemo } from "react";
-import { MapContainer, Marker, Popup, Polyline, TileLayer } from "react-leaflet";
+import { MapContainer, Marker, Popup, Polyline, TileLayer, useMapEvents } from "react-leaflet";
 
 function congestionColor(level) {
   if (level === "HIGH") return "#ef4444";
@@ -12,8 +12,63 @@ function estimatedMinutes(distanceKm, congestionWeight) {
   return Math.max(1, Math.round(((distanceKm * congestionWeight) / baseSpeedKmh) * 60));
 }
 
-export default function TrafficMap({ cities, route, congestionEdges, onEdgeClick }) {
+export default function TrafficMap({
+  cities,
+  route,
+  congestionEdges,
+  sourceCity,
+  destinationCity,
+  sourcePoint,
+  destinationPoint,
+  activeEndpoint,
+  onEndpointChange,
+  onEndpointFocus,
+  onEdgeClick
+}) {
   const cityIndex = useMemo(() => new Map(cities.map((city) => [city.name, city])), [cities]);
+
+  const sourceFallback = cityIndex.get(sourceCity) ?? cityIndex.get("Mumbai") ?? cities[0];
+  const destinationFallback = cityIndex.get(destinationCity) ?? cityIndex.get("Pune") ?? cities[1] ?? cities[0];
+
+  function MapClickSetter() {
+    useMapEvents({
+      click(event) {
+        if (!activeEndpoint) return;
+        onEndpointChange?.(activeEndpoint, event.latlng.lat, event.latlng.lng);
+      }
+    });
+
+    return null;
+  }
+
+  const renderEndpointMarker = (endpoint, point, fallbackCity, label) => {
+    const position = point ? [point.lat, point.lon] : [fallbackCity.lat, fallbackCity.lon];
+
+    return (
+      <Marker
+        key={endpoint}
+        position={position}
+        draggable
+        eventHandlers={{
+          dragend: (event) => {
+            const next = event.target.getLatLng();
+            onEndpointFocus?.(endpoint);
+            onEndpointChange?.(endpoint, next.lat, next.lng);
+          }
+        }}
+      >
+        <Popup>
+          <div className="space-y-1 text-sm">
+            <p className="font-semibold capitalize">{label} endpoint</p>
+            <p>
+              {position[0].toFixed(4)}, {position[1].toFixed(4)}
+            </p>
+            <p className="text-xs text-slate-500">Drag the pin or click the map after choosing this endpoint.</p>
+          </div>
+        </Popup>
+      </Marker>
+    );
+  };
 
   const routeSegments = useMemo(() => {
     if (!route?.path?.length) return [];
@@ -51,10 +106,14 @@ export default function TrafficMap({ cities, route, congestionEdges, onEdgeClick
 
   return (
     <MapContainer center={center} zoom={5} scrollWheelZoom className="h-full min-h-[78vh] w-full">
+      <MapClickSetter />
       <TileLayer
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
       />
+
+      {renderEndpointMarker("source", sourcePoint, sourceFallback, "source")}
+      {renderEndpointMarker("destination", destinationPoint, destinationFallback, "destination")}
 
       {cities.map((city) => (
         <Marker key={city.name} position={[city.lat, city.lon]}>
