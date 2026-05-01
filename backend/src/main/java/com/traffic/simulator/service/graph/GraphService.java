@@ -103,6 +103,35 @@ public class GraphService {
         throw new IllegalArgumentException("Unknown node: " + idOrName);
     }
 
+    public Node resolveEndpoint(String name, Double latitude, Double longitude) {
+        if (latitude != null && longitude != null && Double.isFinite(latitude) && Double.isFinite(longitude)) {
+            return findNearestNode(latitude, longitude);
+        }
+        if (name != null && !name.isBlank()) {
+            return resolveNode(name);
+        }
+        throw new IllegalArgumentException("Route endpoint must include a city name or coordinates");
+    }
+
+    private Node findNearestNode(double latitude, double longitude) {
+        Node nearest = null;
+        double nearestDistance = Double.POSITIVE_INFINITY;
+
+        for (Node node : nodes.values()) {
+            double distance = haversineKm(latitude, longitude, node.getLatitude(), node.getLongitude());
+            if (distance < nearestDistance) {
+                nearestDistance = distance;
+                nearest = node;
+            }
+        }
+
+        if (nearest == null) {
+            throw new IllegalArgumentException("No routing nodes are available");
+        }
+
+        return nearest;
+    }
+
     public Collection<Node> getAllNodes() {
         return Collections.unmodifiableCollection(nodes.values());
     }
