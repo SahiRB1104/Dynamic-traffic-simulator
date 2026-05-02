@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useEffect, useState } from "react";
 import { MapContainer, Marker, Popup, Polyline, TileLayer, useMapEvents } from "react-leaflet";
 
 function congestionColor(level) {
@@ -103,6 +103,47 @@ export default function TrafficMap({
   }, [route, cityIndex, congestionEdges]);
 
   const center = [20.5937, 78.9629];
+  const [osrmRoute, setOsrmRoute] = useState(null);
+
+  useEffect(() => {
+    // Fetch a road-following route from OSRM for the main source->destination pair
+    // and render it as a dark base polyline beneath the colored segment polylines.
+    async function fetchOsrmRoute() {
+      setOsrmRoute(null);
+      if (!route?.path?.length) return;
+
+      // Determine start and end coordinates (use pinned points if provided)
+      const startNode = route.path[0];
+      const endNode = route.path[route.path.length - 1];
+
+      const start = cityIndex.get(startNode.name) ?? startNode;
+      const end = cityIndex.get(endNode.name) ?? endNode;
+
+      if (!start || !end) return;
+
+      const startLonLat = `${start.lon},${start.lat}`;
+      const endLonLat = `${end.lon},${end.lat}`;
+
+      const url = `https://router.project-osrm.org/route/v1/driving/${startLonLat};${endLonLat}?overview=full&geometries=geojson`;
+
+      try {
+        const resp = await fetch(url);
+        if (!resp.ok) return;
+        const data = await resp.json();
+        const coords = data.routes?.[0]?.geometry?.coordinates;
+        if (!coords) return;
+
+        // OSRM returns [lon, lat] pairs — convert to [lat, lon]
+        const positions = coords.map((c) => [c[1], c[0]]);
+        setOsrmRoute(positions);
+      } catch (e) {
+        // ignore errors silently (fallback to straight segment polylines)
+        setOsrmRoute(null);
+      }
+    }
+
+    fetchOsrmRoute();
+  }, [route, cityIndex]);
 
   return (
     <MapContainer center={center} zoom={5} scrollWheelZoom className="h-full min-h-[78vh] w-full">
@@ -127,6 +168,15 @@ export default function TrafficMap({
           </Popup>
         </Marker>
       ))}
+
+      {/* Draw a single road-following OSRM route (dark base) if available */}
+      {osrmRoute && (
+        <Polyline
+          key="osrm-route"
+          positions={osrmRoute}
+          pathOptions={{ color: "#0f172a", weight: 6, opacity: 0.95 }}
+        />
+      )}
 
       {routeSegments.map((segment) => {
         const color = congestionColor(segment.edge.level);
