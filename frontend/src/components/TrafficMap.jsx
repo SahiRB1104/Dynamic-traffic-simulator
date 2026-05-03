@@ -178,7 +178,7 @@ export default function TrafficMap({
         />
       )}
 
-      {routeSegments.map((segment) => {
+      {!osrmRoute && routeSegments.map((segment) => {
         const color = congestionColor(segment.edge.level);
         const minutes = estimatedMinutes(segment.edge.distanceKm, segment.edge.congestionWeight);
 
