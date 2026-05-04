@@ -112,12 +112,9 @@ export default function TrafficMap({
       setOsrmRoute(null);
       if (!route?.path?.length) return;
 
-      // Determine start and end coordinates (use pinned points if provided)
-      const startNode = route.path[0];
-      const endNode = route.path[route.path.length - 1];
-
-      const start = cityIndex.get(startNode.name) ?? startNode;
-      const end = cityIndex.get(endNode.name) ?? endNode;
+      // Always prioritize pinned endpoints so the rendered path matches user-selected GPS points.
+      const start = sourcePoint ?? sourceFallback;
+      const end = destinationPoint ?? destinationFallback;
 
       if (!start || !end) return;
 
@@ -143,7 +140,7 @@ export default function TrafficMap({
     }
 
     fetchOsrmRoute();
-  }, [route, cityIndex]);
+  }, [route, sourcePoint, destinationPoint, sourceFallback, destinationFallback]);
 
   return (
     <MapContainer center={center} zoom={5} scrollWheelZoom className="h-full min-h-[78vh] w-full">
