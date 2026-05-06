@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import TrafficMap from "./components/TrafficMap";
+import SearchBox from "./components/SearchBox";
 import { indiaCities } from "./data/indiaCities";
 
 const algorithms = [
@@ -8,16 +9,15 @@ const algorithms = [
   { label: "A*", value: "ASTAR" }
 ];
 
-const initialForm = {
-  source: "Mumbai",
-  destination: "Pune",
-  algorithm: "DIJKSTRA"
-};
+function toLocation(city) {
+  if (!city) return null;
 
-const initialPoints = {
-  source: null,
-  destination: null
-};
+  return {
+    label: city.name,
+    lat: city.lat,
+    lon: city.lon
+  };
+}
 
 function estimateTime(distanceKm, congestionWeight) {
   const baseSpeedKmh = 45;
@@ -25,8 +25,18 @@ function estimateTime(distanceKm, congestionWeight) {
 }
 
 export default function App() {
-  const [form, setForm] = useState(initialForm);
-  const [points, setPoints] = useState(initialPoints);
+  const defaultSourceCity = useMemo(() => indiaCities.find((city) => city.name === "Mumbai") ?? indiaCities[0] ?? null, []);
+  const defaultDestinationCity = useMemo(() => indiaCities.find((city) => city.name === "Pune") ?? indiaCities[1] ?? indiaCities[0] ?? null, []);
+
+  const [form, setForm] = useState({
+    source: defaultSourceCity?.name ?? "",
+    destination: defaultDestinationCity?.name ?? "",
+    algorithm: "DIJKSTRA"
+  });
+  const [points, setPoints] = useState({
+    source: toLocation(defaultSourceCity),
+    destination: toLocation(defaultDestinationCity)
+  });
   const [activeEndpoint, setActiveEndpoint] = useState("source");
   const [route, setRoute] = useState(null);
   const [congestionEdges, setCongestionEdges] = useState([]);
@@ -64,41 +74,50 @@ export default function App() {
     return () => stream?.close();
   }, []);
 
-  const sortedCities = useMemo(() => [...indiaCities].sort((a, b) => a.name.localeCompare(b.name)), []);
-  const cityByName = useMemo(() => new Map(indiaCities.map((city) => [city.name, city])), []);
-
-  const nearestCityForPoint = (latitude, longitude) => {
-    let nearest = sortedCities[0];
-    let nearestDistance = Number.POSITIVE_INFINITY;
-
-    sortedCities.forEach((city) => {
-      const latDiff = latitude - city.lat;
-      const lonDiff = longitude - city.lon;
-      const distance = Math.hypot(latDiff, lonDiff);
-      if (distance < nearestDistance) {
-        nearestDistance = distance;
-        nearest = city;
-      }
-    });
-
-    return nearest;
-  };
-
-  const updateCityEndpoint = (endpoint, cityName) => {
-    setForm((current) => ({ ...current, [endpoint]: cityName }));
+  const updateSearchText = (endpoint, query) => {
+    setForm((current) => ({ ...current, [endpoint]: query }));
     setPoints((current) => ({
       ...current,
       [endpoint]: null
     }));
   };
 
-  const setEndpointFromCoordinates = (endpoint, latitude, longitude) => {
-    const nearestCity = nearestCityForPoint(latitude, longitude);
-    setForm((current) => ({ ...current, [endpoint]: nearestCity.name }));
+  const selectSearchResult = (endpoint, location) => {
+    setForm((current) => ({ ...current, [endpoint]: location.label }));
     setPoints((current) => ({
       ...current,
-      [endpoint]: { lat: latitude, lon: longitude }
+      [endpoint]: location
     }));
+  };
+
+  const setEndpointFromCoordinates = (endpoint, latitude, longitude) => {
+    setPoints((current) => {
+      const label = current[endpoint]?.label ?? form[endpoint] ?? (endpoint === "source" ? "Source" : "Destination");
+
+      return {
+        ...current,
+        [endpoint]: {
+          label,
+          lat: latitude,
+          lon: longitude
+        }
+      };
+    });
+  };
+
+  const swapEndpoints = () => {
+    setForm((current) => ({
+      source: current.destination,
+      destination: current.source,
+      algorithm: current.algorithm
+    }));
+
+    setPoints((current) => ({
+      source: current.destination,
+      destination: current.source
+    }));
+
+    setActiveEndpoint((current) => (current === "source" ? "destination" : "source"));
   };
 
   const requestCurrentLocation = (endpoint) => {
@@ -111,6 +130,7 @@ export default function App() {
       (position) => {
         setError("");
         setActiveEndpoint(endpoint);
+        setForm((current) => ({ ...current, [endpoint]: "Current location" }));
         setEndpointFromCoordinates(endpoint, position.coords.latitude, position.coords.longitude);
         setStatus(`${endpoint === "source" ? "Source" : "Destination"} set from current location`);
       },
@@ -134,18 +154,20 @@ export default function App() {
       const sourcePoint = points.source;
       const destinationPoint = points.destination;
 
+      if (!sourcePoint || !destinationPoint) {
+        throw new Error("Select both source and destination from the search results before routing");
+      }
+
       const response = await axios.post("http://localhost:8080/api/route", {
-        source: form.source,
-        sourceLatitude: sourcePoint?.lat,
-        sourceLongitude: sourcePoint?.lon,
-        destination: form.destination,
-        destinationLatitude: destinationPoint?.lat,
-        destinationLongitude: destinationPoint?.lon,
+        sourceLat: sourcePoint.lat,
+        sourceLon: sourcePoint.lon,
+        destLat: destinationPoint.lat,
+        destLon: destinationPoint.lon,
         algorithm: form.algorithm
       });
       setRoute(response.data);
     } catch (err) {
-      setError(err.response?.data?.error ?? err.response?.data?.message ?? "Route lookup failed");
+      setError(err.response?.data?.error ?? err.response?.data?.message ?? err.message ?? "Route lookup failed");
       setRoute(null);
     } finally {
       setLoading(false);
@@ -187,75 +209,39 @@ export default function App() {
             </div>
 
             <div>
-              <label className="mb-2 block text-sm font-medium text-slate-200">Source city</label>
-              <select
+              <label className="mb-2 block text-sm font-medium text-slate-200">Source address</label>
+              <SearchBox
+                label="Source"
                 value={form.source}
-                onChange={(e) => updateCityEndpoint("source", e.target.value)}
-                className="w-full rounded-2xl border border-white/10 bg-slate-900 px-4 py-3 text-sm text-white outline-none ring-0 transition focus:border-cyan-400"
+                selected={points.source}
+                onChange={(query) => updateSearchText("source", query)}
+                onSelect={(location) => selectSearchResult("source", location)}
+                onSetCurrentLocation={() => requestCurrentLocation("source")}
+                onSetOnMap={() => setActiveEndpoint("source")}
+              />
+            </div>
+
+            <div className="flex justify-center">
+              <button
+                type="button"
+                onClick={swapEndpoints}
+                className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-200 transition hover:bg-white/10"
               >
-                {sortedCities.map((city) => (
-                  <option key={city.name} value={city.name}>
-                    {city.name}
-                  </option>
-                ))}
-              </select>
-              <div className="mt-2 flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => requestCurrentLocation("source")}
-                  className="rounded-full border border-cyan-300/30 bg-cyan-400/10 px-3 py-1 text-xs font-semibold text-cyan-200 transition hover:bg-cyan-400/20"
-                >
-                  Use current location
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveEndpoint("source")}
-                  className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-semibold text-slate-200 transition hover:bg-white/10"
-                >
-                  Set on map
-                </button>
-              </div>
-              <p className="mt-2 text-xs text-slate-400">
-                {points.source
-                  ? `Pinned at ${points.source.lat.toFixed(4)}, ${points.source.lon.toFixed(4)}`
-                  : `Using city default: ${cityByName.get(form.source)?.name ?? form.source}`}
-              </p>
+                <span>Swap source ↔ destination</span>
+              </button>
             </div>
 
             <div>
-              <label className="mb-2 block text-sm font-medium text-slate-200">Destination city</label>
-              <select
+              <label className="mb-2 block text-sm font-medium text-slate-200">Destination address</label>
+              <SearchBox
+                label="Destination"
                 value={form.destination}
-                onChange={(e) => updateCityEndpoint("destination", e.target.value)}
-                className="w-full rounded-2xl border border-white/10 bg-slate-900 px-4 py-3 text-sm text-white outline-none transition focus:border-cyan-400"
-              >
-                {sortedCities.map((city) => (
-                  <option key={city.name} value={city.name}>
-                    {city.name}
-                  </option>
-                ))}
-              </select>
-              <div className="mt-2 flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => requestCurrentLocation("destination")}
-                  className="rounded-full border border-cyan-300/30 bg-cyan-400/10 px-3 py-1 text-xs font-semibold text-cyan-200 transition hover:bg-cyan-400/20"
-                >
-                  Use current location
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveEndpoint("destination")}
-                  className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-semibold text-slate-200 transition hover:bg-white/10"
-                >
-                  Set on map
-                </button>
-              </div>
-              <p className="mt-2 text-xs text-slate-400">
-                {points.destination
-                  ? `Pinned at ${points.destination.lat.toFixed(4)}, ${points.destination.lon.toFixed(4)}`
-                  : `Using city default: ${cityByName.get(form.destination)?.name ?? form.destination}`}
-              </p>
+                selected={points.destination}
+                onChange={(query) => updateSearchText("destination", query)}
+                onSelect={(location) => selectSearchResult("destination", location)}
+                onSetCurrentLocation={() => requestCurrentLocation("destination")}
+                onSetOnMap={() => setActiveEndpoint("destination")}
+              />
             </div>
 
             <div>
