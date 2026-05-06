@@ -1,8 +1,10 @@
 package com.traffic.simulator.controller;
 
+import jakarta.servlet.http.HttpServletRequest;
 import java.time.Instant;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -12,7 +14,11 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 public class GlobalExceptionHandler {
 
   @ExceptionHandler(IllegalArgumentException.class)
-  public ResponseEntity<Map<String, String>> handleIllegalArgument(IllegalArgumentException ex) {
+  public ResponseEntity<?> handleIllegalArgument(IllegalArgumentException ex, HttpServletRequest request) {
+    if (isSseRequest(request)) {
+      return ResponseEntity.badRequest().contentType(MediaType.TEXT_PLAIN).body(ex.getMessage());
+    }
+
     return ResponseEntity.badRequest()
         .body(
             Map.of(
@@ -21,7 +27,13 @@ public class GlobalExceptionHandler {
   }
 
   @ExceptionHandler(MethodArgumentTypeMismatchException.class)
-  public ResponseEntity<Map<String, String>> handleTypeMismatch(MethodArgumentTypeMismatchException ex) {
+  public ResponseEntity<?> handleTypeMismatch(MethodArgumentTypeMismatchException ex, HttpServletRequest request) {
+    if (isSseRequest(request)) {
+      return ResponseEntity.badRequest()
+          .contentType(MediaType.TEXT_PLAIN)
+          .body("Invalid value for parameter: " + ex.getName());
+    }
+
     return ResponseEntity.badRequest()
         .body(
             Map.of(
@@ -30,11 +42,22 @@ public class GlobalExceptionHandler {
   }
 
   @ExceptionHandler(Exception.class)
-  public ResponseEntity<Map<String, String>> handleUnhandled(Exception ex) {
+  public ResponseEntity<?> handleUnhandled(Exception ex, HttpServletRequest request) {
+    if (isSseRequest(request)) {
+      return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+          .contentType(MediaType.TEXT_PLAIN)
+          .body("Internal server error");
+    }
+
     return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
         .body(
             Map.of(
                 "error", "Internal server error",
                 "timestamp", Instant.now().toString()));
+  }
+
+  private boolean isSseRequest(HttpServletRequest request) {
+    String acceptHeader = request.getHeader("Accept");
+    return acceptHeader != null && acceptHeader.contains(MediaType.TEXT_EVENT_STREAM_VALUE);
   }
 }
