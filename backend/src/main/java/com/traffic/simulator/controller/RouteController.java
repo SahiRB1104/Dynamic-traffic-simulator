@@ -1,10 +1,10 @@
 package com.traffic.simulator.controller;
 
-import com.traffic.simulator.geo.model.Node;
+import com.traffic.simulator.entity.NodeEntity;
 import com.traffic.simulator.model.CongestionEdgeView;
-import com.traffic.simulator.model.CongestionLevel;
 import com.traffic.simulator.model.RouteRequest;
 import com.traffic.simulator.model.RouteResponse;
+import com.traffic.simulator.repository.NodeRepository;
 import com.traffic.simulator.service.CongestionService;
 import com.traffic.simulator.service.graph.GraphService;
 import java.io.IOException;
@@ -25,10 +25,12 @@ public class RouteController {
 
     private final GraphService graphService;
     private final CongestionService congestionService;
+    private final NodeRepository nodeRepository;
 
-    public RouteController(GraphService graphService, CongestionService congestionService) {
+    public RouteController(GraphService graphService, CongestionService congestionService, NodeRepository nodeRepository) {
         this.graphService = graphService;
         this.congestionService = congestionService;
+        this.nodeRepository = nodeRepository;
     }
 
     @PostMapping("/route")
@@ -56,15 +58,23 @@ public class RouteController {
     }
 
     private GraphService.PathResult runAlgorithm(RouteRequest request) {
-        Node source = graphService.resolveEndpoint(request.source(), request.sourceLatitude(), request.sourceLongitude());
-        Node destination = graphService.resolveEndpoint(
-            request.destination(), request.destinationLatitude(), request.destinationLongitude());
+        NodeEntity source = resolveNearestNode(request.sourceLat(), request.sourceLon(), "source");
+        NodeEntity destination = resolveNearestNode(request.destLat(), request.destLon(), "destination");
         String algorithm = request.algorithm() == null ? "DIJKSTRA" : request.algorithm().trim().toUpperCase(Locale.ROOT);
 
         return switch (algorithm) {
-            case "ASTAR", "A*" -> graphService.aStar(source.getId(), destination.getId());
-            case "DIJKSTRA" -> graphService.dijkstra(source.getId(), destination.getId());
+            case "ASTAR", "A*" -> graphService.aStar(String.valueOf(source.getId()), String.valueOf(destination.getId()));
+            case "DIJKSTRA" -> graphService.dijkstra(String.valueOf(source.getId()), String.valueOf(destination.getId()));
             default -> throw new IllegalArgumentException("Unsupported algorithm: " + request.algorithm());
         };
+    }
+
+    private NodeEntity resolveNearestNode(Double latitude, Double longitude, String endpointName) {
+        if (latitude == null || longitude == null || !Double.isFinite(latitude) || !Double.isFinite(longitude)) {
+            throw new IllegalArgumentException(endpointName + " coordinates are required");
+        }
+
+        return nodeRepository.findNearestNode(latitude, longitude)
+            .orElseThrow(() -> new IllegalArgumentException("No routing node found for " + endpointName));
     }
 }
