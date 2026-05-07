@@ -44,6 +44,7 @@ export default function App() {
   const [status, setStatus] = useState("Connecting live traffic stream...");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [heatmapEnabled, setHeatmapEnabled] = useState(false);
 
   useEffect(() => {
     let stream;
@@ -306,6 +307,8 @@ export default function App() {
               activeEndpoint={activeEndpoint}
               onEndpointChange={setEndpointFromCoordinates}
               onEndpointFocus={setActiveEndpoint}
+              heatmapEnabled={heatmapEnabled}
+              onHeatmapToggle={() => setHeatmapEnabled((prev) => !prev)}
             />
           </div>
         </section>
