@@ -1,5 +1,6 @@
 import React, { useMemo, useEffect, useState } from "react";
 import { MapContainer, Marker, Popup, Polyline, TileLayer, useMapEvents } from "react-leaflet";
+import TrafficHeatmap from "./TrafficHeatmap";
 
 function congestionColor(level) {
   if (level === "HIGH") return "#ef4444";
@@ -23,7 +24,9 @@ export default function TrafficMap({
   activeEndpoint,
   onEndpointChange,
   onEndpointFocus,
-  onEdgeClick
+  onEdgeClick,
+  heatmapEnabled,
+  onHeatmapToggle
 }) {
   const cityIndex = useMemo(() => new Map(cities.map((city) => [city.name, city])), [cities]);
 
@@ -143,12 +146,15 @@ export default function TrafficMap({
   }, [route, sourcePoint, destinationPoint, sourceFallback, destinationFallback]);
 
   return (
-    <MapContainer center={center} zoom={5} scrollWheelZoom className="h-full min-h-[78vh] w-full">
-      <MapClickSetter />
-      <TileLayer
-        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-      />
+    <div className="relative w-full h-full">
+      <MapContainer center={center} zoom={5} scrollWheelZoom className="h-full min-h-[78vh] w-full">
+        <MapClickSetter />
+        <TileLayer
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        />
+
+        <TrafficHeatmap isEnabled={heatmapEnabled} onToggle={onHeatmapToggle} />
 
       {renderEndpointMarker("source", sourcePoint, sourceFallback, "source")}
       {renderEndpointMarker("destination", destinationPoint, destinationFallback, "destination")}
@@ -167,7 +173,7 @@ export default function TrafficMap({
       ))}
 
       {/* Draw a single road-following OSRM route (dark base) if available */}
-      {osrmRoute && (
+      {!heatmapEnabled && osrmRoute && (
         <Polyline
           key="osrm-route"
           positions={osrmRoute}
@@ -175,7 +181,7 @@ export default function TrafficMap({
         />
       )}
 
-      {!osrmRoute && routeSegments.map((segment) => {
+      {!heatmapEnabled && !osrmRoute && routeSegments.map((segment) => {
         const color = congestionColor(segment.edge.level);
         const minutes = estimatedMinutes(segment.edge.distanceKm, segment.edge.congestionWeight);
 
@@ -200,5 +206,19 @@ export default function TrafficMap({
         );
       })}
     </MapContainer>
+
+      {/* Heatmap Toggle Button */}
+      <button
+        onClick={onHeatmapToggle}
+        className={`absolute left-4 top-4 z-[1000] flex items-center gap-2 rounded-lg px-4 py-2 font-semibold text-sm transition ${
+          heatmapEnabled
+            ? "bg-red-500/80 hover:bg-red-600/80 text-white"
+            : "bg-white/80 hover:bg-white text-slate-900"
+        }`}
+      >
+        <span className="text-lg">🌡️</span>
+        <span>{heatmapEnabled ? "Heatmap ON" : "Heatmap OFF"}</span>
+      </button>
+    </div>
   );
 }
